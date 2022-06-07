@@ -77,7 +77,7 @@ jobs:
           ${{ runner.os }}-pip-td${{ env.TIME_PERIOD }}-py${{ matrix.python-version }}-${{ matrix.release }}-${{ matrix.requires }}-
 
     - name: Pull checkpoints from S3
-      working-directory: ./legacy
+      working-directory: ./test/legacy
       run: |
         # wget is simpler but does not work on Windows
         python -c "from urllib.request import urlretrieve ; urlretrieve('https://pl-public-data.s3.amazonaws.com/legacy/checkpoints.zip', 'checkpoints.zip')"
@@ -89,7 +89,7 @@ jobs:
       run: |
         flag=$(python -c "print('--pre' if '${{matrix.release}}' == 'pre' else '')" 2>&1)
         url=$(python -c "print('test/cpu/torch_test.html' if '${{matrix.release}}' == 'pre' else 'cpu/torch_stable.html')" 2>&1)
-        pip install -r requirements.txt --upgrade $flag --find-links "https://download.pytorch.org/whl/${url}"
+        pip install -e . --upgrade $flag --find-links "https://download.pytorch.org/whl/${url}"
         # adjust versions according installed Torch version
         python ./requirements/adjust-versions.py requirements/examples.txt
         pip install -r requirements/examples.txt --find-links https://download.pytorch.org/whl/cpu/torch_stable.html --upgrade
@@ -129,28 +129,28 @@ jobs:
         key: pl-dataset
 
     - name: Sanity check
-      run: |
-        python requirements/check-avail-extras.py
+      run: python requirements/check-avail-extras.py
 
     - name: Tests
-      run: |
-        # NOTE: do not include coverage report here, see: https://github.com/nedbat/coveragepy/issues/1003
-        coverage run --source pytorch_lightning -m pytest pytorch_lightning tests -v --durations=50 --junitxml=junit/test-results-${{ runner.os }}-py${{ matrix.python-version }}-${{ matrix.requires }}-${{ matrix.release }}.xml
+      working-directory: ./test
+      # NOTE: do not include coverage report here, see: https://github.com/nedbat/coveragepy/issues/1003
+      run: coverage run --source pytorch_lightning -m pytest unittests -v --durations=50 --junitxml=results-${{ runner.os }}-py${{ matrix.python-version }}-${{ matrix.requires }}-${{ matrix.release }}.xml
 
     - name: Examples
-      run: |
-        python -m pytest pl_examples -v --durations=10
+      working-directory: ./src
+      run: python -m pytest pl_examples -v --durations=10
 
     - name: Upload pytest results
       uses: actions/upload-artifact@v2
       with:
-        name: pytest-results-${{ runner.os }}-py${{ matrix.python-version }}-${{ matrix.requires }}-${{ matrix.release }}
-        path: junit/test-results-${{ runner.os }}-py${{ matrix.python-version }}-${{ matrix.requires }}-${{ matrix.release }}.xml
+        name: unittest-results-${{ runner.os }}-py${{ matrix.python-version }}-${{ matrix.requires }}-${{ matrix.release }}
+        path: test/results-${{ runner.os }}-py${{ matrix.python-version }}-${{ matrix.requires }}-${{ matrix.release }}.xml
         if-no-files-found: error
       if: failure()
 
     - name: Statistics
       if: success()
+      working-directory: ./test
       run: |
         coverage report
         coverage xml
@@ -162,7 +162,7 @@ jobs:
       continue-on-error: true
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
-        file: coverage.xml
-        flags: cpu,pytest,python${{ matrix.python-version }}
+        file: test/coverage.xml
+        flags: cpu,unittests,python${{ matrix.python-version }},${{ matrix.requires }}
         name: CPU-coverage
         fail_ci_if_error: false
